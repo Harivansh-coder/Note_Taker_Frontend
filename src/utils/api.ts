@@ -48,8 +48,8 @@ export const notesApi = {
     const response = await api.post<Note>("/notes", content);
     return response.data;
   },
-  updateNote: async (id: string, content: Partial<Note>) => {
-    const response = await api.put<Note>(`/notes/${id}`, content);
+  updateNote: async (content: Partial<Note>) => {
+    const response = await api.put<Note>(`/notes/${content._id}`, content);
     return response.data;
   },
   deleteNote: async (id: string) => {

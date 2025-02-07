@@ -1,22 +1,41 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { NoteCard } from "../components/NoteCard";
 import { NoteCreator } from "../components/NoteCreator";
 import { NoteModal } from "../components/NoteModal";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
-import type { Note } from "../types/note";
 import { Search, SortDesc, LogOut } from "lucide-react";
 import { notesApi } from "@/utils/api";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
+import { Note } from "@/types/note";
 
 export default function Home() {
-  const [notes, setNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Fetch notes using React Query
+  const { data: notes, isLoading } = useQuery<Note[]>(
+    ["notes"],
+    notesApi.getNotes
+  );
+
+  const createNoteMutation = useMutation(notesApi.createNote, {
+    onSuccess: () => queryClient.invalidateQueries(["notes"]),
+  });
+
+  const deleteNoteMutation = useMutation(notesApi.deleteNote, {
+    onSuccess: () => queryClient.invalidateQueries(["notes"]),
+  });
+
+  const updateNoteMutation = useMutation(notesApi.updateNote, {
+    onSuccess: () => queryClient.invalidateQueries(["notes"]),
+  });
 
   // Filter notes based on search query
-  const filteredNotes = notes.filter((note) => {
+  const filteredNotes = notes?.filter((note) => {
     if (searchQuery === "") return true;
     return (
       note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -24,41 +43,26 @@ export default function Home() {
     );
   });
 
-  const fetchNotes = async () => {
-    const data = await notesApi.getNotes();
-    setNotes(data);
-  };
-
-  // Fetch notes on initial render
-  useEffect(() => {
-    fetchNotes();
-  }, [searchQuery]);
-
   const handleCreateNote = (noteData: {
     title: string;
     content: string;
     isAudio?: boolean;
   }) => {
-    const newNote: Note = {
+    const newNote = {
       title: noteData.title,
       content: noteData.content,
-      isAudio: noteData.isAudio || false,
       isNew: true,
+      isAudio: noteData.isAudio || false,
       createdAt: new Date().getTime(),
       updatedAt: new Date().getTime(),
       isFavorite: false,
     };
 
-    notesApi.createNote(newNote).then((data) => {
-      setNotes((prev) => [data, ...prev]);
-    });
-
-    window.location.reload();
+    createNoteMutation.mutate(newNote);
   };
 
   const handleDeleteNote = (id: string) => {
-    notesApi.deleteNote(id);
-    setNotes((prev) => prev.filter((note) => note._id !== id));
+    deleteNoteMutation.mutate(id);
   };
 
   const handleEditNote = (note: Note) => {
@@ -67,33 +71,24 @@ export default function Home() {
   };
 
   const handleSaveNote = (editedNote: Note) => {
-    notesApi.updateNote(editedNote._id!, editedNote).then(() => {
-      setNotes((prev) =>
-        prev.map((note) => (note._id === editedNote._id ? editedNote : note))
-      );
-    });
-
+    updateNoteMutation.mutate(editedNote);
     setIsModalOpen(false);
     setSelectedNote(null);
   };
 
   const handleFavoriteNote = (id: string) => {
-    notesApi
-      .updateNote(id, {
-        isFavorite: !notes.find((note) => note._id === id)?.isFavorite,
-      })
-      .then(() => {
-        setNotes((prev) =>
-          prev.map((note) =>
-            note._id === id ? { ...note, isFavorite: !note.isFavorite } : note
-          )
-        );
-      });
+    const note = notes?.find((note) => note._id === id);
+    if (note) {
+      updateNoteMutation.mutate({ ...note, isFavorite: !note.isFavorite });
+    }
   };
 
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
+
+      {isLoading && <div>Loading...</div>}
+
       <div className="flex-1 overflow-y-auto">
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
@@ -110,8 +105,14 @@ export default function Home() {
               <SortDesc
                 className="h-4 w-4"
                 onClick={() => {
-                  setNotes((prev) =>
-                    [...prev].sort((a, b) => a.createdAt - b.createdAt)
+                  // ignore using any type here
+
+                  queryClient.setQueryData(
+                    ["notes"],
+                    (oldData: Note[] | undefined) =>
+                      oldData?.sort(
+                        (a: Note, b: Note) => a.createdAt - b.createdAt
+                      )
                   );
                 }}
               />
@@ -129,7 +130,7 @@ export default function Home() {
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredNotes.map((note) => (
+            {filteredNotes?.map((note) => (
               <NoteCard
                 key={note._id}
                 note={note}
